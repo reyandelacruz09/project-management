@@ -1,0 +1,88 @@
+name: project-management
+
+x-app: &app
+  build:
+    context: .
+    target: app
+  image: project-management/app
+  working_dir: /var/www/html
+  volumes:
+    - .:/var/www/html
+    - vendor:/var/www/html/vendor
+
+services:
+  app:
+    <<: *app
+    restart: unless-stopped
+
+  queue:
+    <<: *app
+    restart: unless-stopped
+    command: php artisan queue:work --sleep=1 --tries=3
+    depends_on:
+      - app
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+
+  node:
+    image: node:${NODE_VERSION:-22}-alpine
+    profiles:
+      - dev
+    working_dir: /var/www/html
+    command: sh -c "npm install && npm run dev"
+    environment:
+      LARAVEL_SAIL: "1"
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/var/www/html
+      - node_modules:/var/www/html/node_modules
+
+  mysql:
+    image: mysql:8.4
+    profiles:
+      - mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-laravel}
+      MYSQL_USER: ${DB_USERNAME:-laravel}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    profiles:
+      - redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  vendor:
+  node_modules:
+  mysql:
