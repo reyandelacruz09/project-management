@@ -90,19 +90,23 @@ This starts the Vite dev server on <http://localhost:5173> and writes `public/ho
 
 ### Optional services
 
-MySQL and Redis are available through compose profiles. Start them with `docker compose --profile mysql --profile redis up -d` and point `.env` at them:
+MySQL and Redis are available through compose profiles. The app's dashboard caches its query results for one minute. To try that cache with Redis, set these values in `.env` (when using the Compose app, use `REDIS_HOST=redis`; when running PHP directly on your machine, use `REDIS_HOST=127.0.0.1`):
 
 ```dotenv
-DB_CONNECTION=mysql
-DB_HOST=mysql
-DB_DATABASE=laravel
-DB_USERNAME=laravel
-DB_PASSWORD=secret
-
 CACHE_STORE=redis
-QUEUE_CONNECTION=redis
+REDIS_CLIENT=phpredis
 REDIS_HOST=redis
+REDIS_PORT=6379
 ```
+
+Then rebuild the PHP image so it has the Redis PHP extension, and start the Redis profile:
+
+```sh
+docker compose build app
+docker compose --profile redis up -d
+```
+
+Open the dashboard twice within a minute: the first request runs the database queries and writes the result to Redis; the next request can use the cached result. Inspect Redis with `docker compose exec redis redis-cli scan 0 match '*dashboard*'`. The cache key includes the user ID, and expires after one minute. To try the database cache again, set `CACHE_STORE=database` and clear the cached configuration with `php artisan config:clear` (or rebuild/restart the app container after changing `.env`).
 
 ## Contributing
 

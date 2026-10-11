@@ -36,6 +36,8 @@ ENV APP_ENV=local \
 RUN apk add --no-cache icu-libs libzip \
     && apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev libzip-dev oniguruma-dev sqlite-dev \
     && docker-php-ext-install -j"$(nproc)" bcmath intl opcache pcntl pdo_mysql pdo_sqlite zip \
+    && pecl install redis \
+    && docker-php-ext-enable redis \
     && apk del .build-deps
 
 COPY docker/php/php.ini /usr/local/etc/php/conf.d/zz-app.ini
