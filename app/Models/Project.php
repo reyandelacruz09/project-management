@@ -17,6 +17,25 @@ class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Project $project): void {
+            $taskIds = $project->tasks()->pluck('id');
+
+            if ($taskIds->isNotEmpty()) {
+                Comment::where('commentable_type', Task::class)
+                    ->whereIn('commentable_id', $taskIds)
+                    ->delete();
+            }
+
+            $project->comments()->delete();
+        });
+    }
+
+    /**
+     * @return array<string, string>
+     */
     protected function casts(): array
     {
         return [

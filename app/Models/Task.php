@@ -16,6 +16,17 @@ class Task extends Model
 {
     /** @use HasFactory<TaskFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::deleting(function (Task $task): void {
+            $task->comments()->delete();
+        });
+    }
+
+    /**
+     * @return array<string, string>
+     */
     protected function casts(): array
     {
         return [

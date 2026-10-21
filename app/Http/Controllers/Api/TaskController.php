@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\TaskPriority;
-use App\Enums\TaskStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreTaskRequest;
+use App\Http\Requests\UpdateTaskRequest;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class TaskController extends Controller
 {
@@ -19,19 +19,10 @@ class TaskController extends Controller
         );
     }
 
-    public function store(Request $request, Project $project): JsonResponse
+    public function store(StoreTaskRequest $request, Project $project): JsonResponse
     {
-        $data = $request->validate([
-            'title' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['required', 'string', 'in:'.implode(',', TaskStatus::values())],
-            'priority' => ['required', 'string', 'in:'.implode(',', TaskPriority::values())],
-            'user_id' => ['nullable', 'exists:users,id'],
-            'due_date' => ['nullable', 'date'],
-        ]);
-
         $task = $project->tasks()->create([
-            ...$data,
+            ...$request->validated(),
             'created_by' => $request->user()->id,
         ]);
 
@@ -45,20 +36,11 @@ class TaskController extends Controller
         return response()->json($task->load('assignee:id,name', 'creator:id,name', 'comments.user:id,name'));
     }
 
-    public function update(Request $request, Project $project, Task $task): JsonResponse
+    public function update(UpdateTaskRequest $request, Project $project, Task $task): JsonResponse
     {
         abort_unless($task->project_id === $project->id, 404);
 
-        $data = $request->validate([
-            'title' => ['sometimes', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['sometimes', 'string', 'in:'.implode(',', TaskStatus::values())],
-            'priority' => ['sometimes', 'string', 'in:'.implode(',', TaskPriority::values())],
-            'user_id' => ['nullable', 'exists:users,id'],
-            'due_date' => ['nullable', 'date'],
-        ]);
-
-        $task->update($data);
+        $task->update($request->validated());
 
         return response()->json($task->load('assignee:id,name', 'creator:id,name'));
     }
@@ -66,6 +48,8 @@ class TaskController extends Controller
     public function destroy(Project $project, Task $task): JsonResponse
     {
         abort_unless($task->project_id === $project->id, 404);
+
+        Gate::authorize('delete', $task);
 
         $task->delete();
 

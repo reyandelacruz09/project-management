@@ -100,11 +100,7 @@
                                             class="truncate font-medium text-gray-900 hover:text-indigo-600">{{ $task->title }}</a>
                                         <div class="text-sm text-gray-500">{{ $task->project->name }}</div>
                                     </div>
-                                    <x-status-badge :status="$task->priority" size="md" :classes="match ($task->priority) {
-                                        \App\Enums\TaskPriority::Urgent => 'bg-red-50 text-red-700',
-                                        \App\Enums\TaskPriority::High => 'bg-orange-50 text-orange-700',
-                                        default => 'bg-gray-100 text-gray-700',
-                                    }" />
+                                    <x-status-badge :status="$task->priority" size="md" />
                                 </li>
                             @empty
                                 <li class="py-3 text-sm text-gray-500">You have no open tasks.</li>

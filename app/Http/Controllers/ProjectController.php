@@ -5,13 +5,15 @@ namespace App\Http\Controllers;
 use App\Enums\ProjectStatus;
 use App\Enums\TaskPriority;
 use App\Enums\TaskStatus;
-use App\Enums\UserRole;
+use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Project;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class ProjectController extends Controller
 {
@@ -19,8 +21,11 @@ class ProjectController extends Controller
     {
         $projects = Project::query()
             ->with(['owner:id,name', 'team:id,name'])
-            ->when($request->search, function ($query, $search) {
+            ->when($request->search, function ($query, $search): void {
                 $query->where('name', 'like', "%{$search}%");
+            })
+            ->when($request->status, function ($query, $status): void {
+                $query->where('status', $status);
             })
             ->latest()
             ->paginate(8)
@@ -28,7 +33,8 @@ class ProjectController extends Controller
 
         return view('projects.index', [
             'projects' => $projects,
-            'filters' => $request->only(['search']),
+            'filters' => $request->only(['search', 'status']),
+            'statuses' => ProjectStatus::cases(),
         ]);
     }
 
@@ -41,12 +47,10 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreProjectRequest $request): RedirectResponse
     {
-        $data = $this->validated($request);
-
         $project = Project::create([
-            ...$data,
+            ...$request->validated(),
             'owner_id' => auth()->id(),
         ]);
 
@@ -56,7 +60,7 @@ class ProjectController extends Controller
             ->with('success', 'Project created.');
     }
 
-    public function show(Project $project): View
+    public function show(Request $request, Project $project): View
     {
         $project->load([
             'owner:id,name',
@@ -67,12 +71,26 @@ class ProjectController extends Controller
 
         $tasks = $project->tasks()
             ->with(['assignee:id,name', 'creator:id,name', 'comments.user:id,name'])
+            ->when($request->task_status, function ($query, $status): void {
+                $query->where('status', $status);
+            })
+            ->when($request->task_priority, function ($query, $priority): void {
+                $query->where('priority', $priority);
+            })
+            ->when($request->assignee, function ($query, $assignee): void {
+                if ($assignee === 'unassigned') {
+                    $query->whereNull('user_id');
+                } else {
+                    $query->where('user_id', $assignee);
+                }
+            })
             ->latest()
             ->get();
 
         return view('projects.show', [
             'project' => $project,
             'tasks' => $tasks,
+            'taskFilters' => $request->only(['task_status', 'task_priority', 'assignee']),
             'allUsers' => User::orderBy('name')->get(['id', 'name']),
             'canManage' => $this->canManage($project),
             'statuses' => TaskStatus::cases(),
@@ -82,7 +100,7 @@ class ProjectController extends Controller
 
     public function edit(Project $project): View
     {
-        abort_unless($this->canManage($project), 403);
+        Gate::authorize('update', $project);
 
         return view('projects.edit', [
             'project' => $project->load(['members:id,name', 'team']),
@@ -92,15 +110,14 @@ class ProjectController extends Controller
         ]);
     }
 
-    public function update(Request $request, Project $project): RedirectResponse
+    public function update(UpdateProjectRequest $request, Project $project): RedirectResponse
     {
-        abort_unless($this->canManage($project), 403);
-
-        $project->update($this->validated($request));
+        $project->update($request->safe()->except(['has_members', 'members']));
 
         if ($request->boolean('has_members')) {
             $synced = collect($request->input('members', []))
-                ->mapWithKeys(fn ($member) => [$member['id'] => ['role' => $member['role'] ?? 'member']]);
+                ->filter(fn ($member): bool => is_array($member) && ! empty($member['id']))
+                ->mapWithKeys(fn ($member): array => [(int) $member['id'] => ['role' => $member['role'] ?? 'member']]);
 
             $project->members()->sync($synced);
         }
@@ -111,7 +128,7 @@ class ProjectController extends Controller
 
     public function destroy(Project $project): RedirectResponse
     {
-        abort_unless($this->canManage($project), 403);
+        Gate::authorize('delete', $project);
 
         $project->delete();
 
@@ -119,32 +136,8 @@ class ProjectController extends Controller
             ->with('success', 'Project deleted.');
     }
 
-    protected function validated(Request $request): array
+    public function canManage(Project $project): bool
     {
-        return $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['required', 'string', 'in:'.implode(',', ProjectStatus::values())],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'team_id' => ['nullable', 'exists:teams,id'],
-        ]);
-    }
-
-    protected function canManage(Project $project): bool
-    {
-        $user = auth()->user();
-
-        if ($user->role === UserRole::Admin) {
-            return true;
-        }
-
-        if ($project->owner_id === $user->id) {
-            return true;
-        }
-
-        $role = $project->members()->where('users.id', $user->id)->value('project_user.role');
-
-        return $role === 'manager';
+        return Gate::allows('update', $project);
     }
 }

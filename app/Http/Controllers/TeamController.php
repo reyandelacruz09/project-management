@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\UserRole;
+use App\Http\Requests\StoreTeamRequest;
+use App\Http\Requests\UpdateTeamRequest;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class TeamController extends Controller
 {
@@ -28,14 +29,9 @@ class TeamController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(StoreTeamRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'members' => ['array'],
-            'members.*' => ['exists:users,id'],
-        ]);
+        $data = $request->validated();
 
         $team = Team::create([
             'name' => $data['name'],
@@ -43,7 +39,7 @@ class TeamController extends Controller
             'owner_id' => auth()->id(),
         ]);
 
-        $team->members()->attach([auth()->id(), ...$data['members'] ?? []]);
+        $team->members()->syncWithoutDetaching([auth()->id(), ...$data['members'] ?? []]);
 
         return redirect()->route('teams.show', $team)
             ->with('success', 'Team created.');
@@ -60,25 +56,17 @@ class TeamController extends Controller
         ]);
     }
 
-    public function update(Request $request, Team $team): RedirectResponse
+    public function update(UpdateTeamRequest $request, Team $team): RedirectResponse
     {
-        abort_unless($this->canManage($team), 403);
+        $data = $request->validated();
 
-        $data = $request->validate([
-            'name' => ['sometimes', 'required', 'string', 'max:255'],
-            'description' => ['sometimes', 'nullable', 'string'],
-            'members' => ['sometimes', 'array'],
-            'members.*' => ['exists:users,id'],
-            'remove' => ['nullable', 'integer', 'exists:users,id'],
-        ]);
-
-        $team->update($request->only(['name', 'description']));
+        $team->update($request->safe()->only(['name', 'description']));
 
         if ($request->has('members')) {
             $team->members()->syncWithoutDetaching($data['members']);
         }
 
-        if ($request->filled('remove')) {
+        if ($request->filled('remove') && (int) $data['remove'] !== $team->owner_id) {
             $team->members()->detach($data['remove']);
         }
 
@@ -87,7 +75,7 @@ class TeamController extends Controller
 
     public function destroy(Team $team): RedirectResponse
     {
-        abort_unless($this->canManage($team), 403);
+        Gate::authorize('delete', $team);
 
         $team->delete();
 
@@ -95,8 +83,8 @@ class TeamController extends Controller
             ->with('success', 'Team deleted.');
     }
 
-    protected function canManage(Team $team): bool
+    public function canManage(Team $team): bool
     {
-        return $team->owner_id === auth()->id() || auth()->user()->role === UserRole::Admin;
+        return Gate::allows('update', $team);
     }
 }

@@ -2,20 +2,20 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\UserRole;
+use App\Http\Requests\StoreCommentRequest;
 use App\Models\Comment;
+use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Http\RedirectResponse;
-use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class CommentController extends Controller
 {
-    public function store(Request $request): RedirectResponse
+    public function store(StoreCommentRequest $request): RedirectResponse
     {
-        $data = $request->validate([
-            'commentable_type' => ['required', 'string', 'in:App\Models\Project,App\Models\Task'],
-            'commentable_id' => ['required', 'integer'],
-            'body' => ['required', 'string', 'max:5000'],
-        ]);
+        $data = $request->validated();
+
+        abort_unless($this->commentableExists($data['commentable_type'], (int) $data['commentable_id']), 404);
 
         Comment::create([
             ...$data,
@@ -27,10 +27,17 @@ class CommentController extends Controller
 
     public function destroy(Comment $comment): RedirectResponse
     {
-        abort_unless($comment->user_id === auth()->id() || auth()->user()->role === UserRole::Admin, 403);
+        Gate::authorize('delete', $comment);
 
         $comment->delete();
 
         return back()->with('success', 'Comment removed.');
+    }
+
+    protected function commentableExists(string $type, int $id): bool
+    {
+        $model = $type === Project::class ? Project::class : Task::class;
+
+        return $model::whereKey($id)->exists();
     }
 }

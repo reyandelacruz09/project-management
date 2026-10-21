@@ -15,13 +15,13 @@
                             <span class="ml-2 text-xs text-gray-400">{{ $comment->created_at }}</span>
                         </div>
 
-                        @if ($comment->user_id === auth()->id())
+                        @can('delete', $comment)
                             <form method="POST" action="{{ route('comments.destroy', $comment) }}">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="text-xs text-red-500 hover:text-red-700">Remove</button>
                             </form>
-                        @endif
+                        @endcan
                     </div>
 
                     <p class="mt-1 whitespace-pre-wrap text-sm text-gray-700">{{ $comment->body }}</p>

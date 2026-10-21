@@ -5,12 +5,16 @@ use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\TeamController;
+use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
-Route::post('login', [AuthController::class, 'login'])->name('api.login');
+Route::post('login', [AuthController::class, 'login'])
+    ->middleware('throttle:5,1')
+    ->name('api.login');
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('user', [AuthController::class, 'user'])->name('api.user');
+    Route::get('users', [UserController::class, 'index'])->name('api.users.index');
     Route::post('logout', [AuthController::class, 'logout'])->name('api.logout');
 
     Route::apiResource('projects', ProjectController::class)->names('api.projects');

@@ -243,4 +243,143 @@ class ProjectManagementTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data');
     }
+
+    public function test_unchecking_members_with_submitted_roles_does_not_fail(): void
+    {
+        $owner = User::factory()->create();
+        $member = User::factory()->create();
+        $project = Project::factory()->create(['owner_id' => $owner->id]);
+        $project->members()->attach($member->id, ['role' => 'member']);
+
+        $this->actingAs($owner)
+            ->put("projects/{$project->id}", [
+                'name' => $project->name,
+                'status' => $project->status->value,
+                'has_members' => 1,
+                'members' => [
+                    ['role' => 'member'],
+                    ['id' => $owner->id, 'role' => 'manager'],
+                ],
+            ])
+            ->assertRedirect("projects/{$project->id}");
+
+        $this->assertDatabaseHas('project_user', [
+            'project_id' => $project->id,
+            'user_id' => $owner->id,
+            'role' => 'manager',
+        ]);
+        $this->assertDatabaseMissing('project_user', [
+            'project_id' => $project->id,
+            'user_id' => $member->id,
+        ]);
+    }
+
+    public function test_task_creator_or_project_manager_can_delete_task_and_stranger_cannot(): void
+    {
+        $owner = User::factory()->create(['role' => UserRole::Member]);
+        $creator = User::factory()->create(['role' => UserRole::Member]);
+        $stranger = User::factory()->create(['role' => UserRole::Member]);
+        $project = Project::factory()->create(['owner_id' => $owner->id]);
+        $task = Task::factory()->create([
+            'project_id' => $project->id,
+            'created_by' => $creator->id,
+        ]);
+
+        $this->actingAs($stranger)
+            ->delete("projects/{$project->id}/tasks/{$task->id}")
+            ->assertForbidden();
+
+        $this->assertModelExists($task);
+
+        $this->actingAs($creator)
+            ->delete("projects/{$project->id}/tasks/{$task->id}")
+            ->assertRedirect();
+
+        $this->assertModelMissing($task);
+    }
+
+    public function test_deleting_a_project_or_task_removes_its_polymorphic_comments(): void
+    {
+        $owner = User::factory()->create();
+        $project = Project::factory()->create(['owner_id' => $owner->id]);
+        $task = Task::factory()->create(['project_id' => $project->id, 'created_by' => $owner->id]);
+
+        $projectComment = Comment::factory()->create([
+            'user_id' => $owner->id,
+            'commentable_type' => Project::class,
+            'commentable_id' => $project->id,
+        ]);
+
+        $taskComment = Comment::factory()->create([
+            'user_id' => $owner->id,
+            'commentable_type' => Task::class,
+            'commentable_id' => $task->id,
+        ]);
+
+        $this->actingAs($owner)
+            ->delete("projects/{$project->id}")
+            ->assertRedirect(route('projects.index'));
+
+        $this->assertModelMissing($projectComment);
+        $this->assertModelMissing($taskComment);
+    }
+
+    public function test_creating_a_team_with_creator_also_in_members_list_does_not_fail(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post('teams', [
+                'name' => 'Alpha Team',
+                'description' => 'No duplicate attach error.',
+                'members' => [$user->id],
+            ])
+            ->assertRedirect();
+
+        $team = Team::where('name', 'Alpha Team')->first();
+
+        $this->assertNotNull($team);
+        $this->assertCount(1, $team->members);
+    }
+
+    public function test_api_endpoints_forbid_unauthorized_mutations(): void
+    {
+        $owner = User::factory()->create(['role' => UserRole::Member]);
+        $intruder = User::factory()->create(['role' => UserRole::Member]);
+
+        $project = Project::factory()->create(['owner_id' => $owner->id]);
+        $team = Team::factory()->create(['owner_id' => $owner->id]);
+        $task = Task::factory()->create(['project_id' => $project->id, 'created_by' => $owner->id]);
+        $comment = Comment::factory()->create([
+            'user_id' => $owner->id,
+            'commentable_type' => Project::class,
+            'commentable_id' => $project->id,
+        ]);
+
+        $token = $intruder->createToken('test')->plainTextToken;
+
+        $this->withToken($token)
+            ->putJson("/api/projects/{$project->id}", ['name' => 'Hacked'])
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->deleteJson("/api/projects/{$project->id}")
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->putJson("/api/teams/{$team->id}", ['name' => 'Hacked Team'])
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->deleteJson("/api/teams/{$team->id}")
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->deleteJson("/api/projects/{$project->id}/tasks/{$task->id}")
+            ->assertForbidden();
+
+        $this->withToken($token)
+            ->deleteJson("/api/comments/{$comment->id}")
+            ->assertForbidden();
+    }
 }

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Enums\ProjectStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreProjectRequest;
+use App\Http\Requests\UpdateProjectRequest;
 use App\Models\Project;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class ProjectController extends Controller
 {
@@ -14,8 +16,11 @@ class ProjectController extends Controller
     {
         $projects = Project::query()
             ->with(['owner:id,name', 'team:id,name', 'members:id,name'])
-            ->when($request->search, function ($query, $search) {
+            ->when($request->search, function ($query, $search): void {
                 $query->where('name', 'like', "%{$search}%");
+            })
+            ->when($request->status, function ($query, $status): void {
+                $query->where('status', $status);
             })
             ->latest()
             ->paginate($request->integer('per_page', 15));
@@ -23,19 +28,10 @@ class ProjectController extends Controller
         return response()->json($projects);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreProjectRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['required', 'string', 'in:'.implode(',', ProjectStatus::values())],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'team_id' => ['nullable', 'exists:teams,id'],
-        ]);
-
         $project = Project::create([
-            ...$data,
+            ...$request->validated(),
             'owner_id' => $request->user()->id,
         ]);
 
@@ -49,24 +45,25 @@ class ProjectController extends Controller
         return response()->json($project->load('owner:id,name', 'team', 'members:id,name', 'tasks.assignee:id,name'));
     }
 
-    public function update(Request $request, Project $project): JsonResponse
+    public function update(UpdateProjectRequest $request, Project $project): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['sometimes', 'string', 'max:255'],
-            'description' => ['nullable', 'string'],
-            'status' => ['sometimes', 'string', 'in:'.implode(',', ProjectStatus::values())],
-            'start_date' => ['nullable', 'date'],
-            'end_date' => ['nullable', 'date', 'after_or_equal:start_date'],
-            'team_id' => ['nullable', 'exists:teams,id'],
-        ]);
+        $project->update($request->safe()->except(['has_members', 'members']));
 
-        $project->update($data);
+        if ($request->boolean('has_members')) {
+            $synced = collect($request->input('members', []))
+                ->filter(fn ($member): bool => is_array($member) && ! empty($member['id']))
+                ->mapWithKeys(fn ($member): array => [(int) $member['id'] => ['role' => $member['role'] ?? 'member']]);
+
+            $project->members()->sync($synced);
+        }
 
         return response()->json($project->load('owner:id,name', 'team'));
     }
 
     public function destroy(Project $project): JsonResponse
     {
+        Gate::authorize('delete', $project);
+
         $project->delete();
 
         return response()->json(null, 204);

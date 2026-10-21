@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\StoreCommentRequest;
 use App\Models\Comment;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 
 class CommentController extends Controller
 {
@@ -24,15 +26,11 @@ class CommentController extends Controller
         );
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(StoreCommentRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'commentable_type' => ['required', 'string', 'in:App\Models\Project,App\Models\Task'],
-            'commentable_id' => ['required', 'integer'],
-            'body' => ['required', 'string', 'max:5000'],
-        ]);
+        $data = $request->validated();
 
-        if (! $this->commentableExists($data['commentable_type'], $data['commentable_id'])) {
+        if (! $this->commentableExists($data['commentable_type'], (int) $data['commentable_id'])) {
             return response()->json(['message' => 'Commentable not found.'], 404);
         }
 
@@ -46,6 +44,8 @@ class CommentController extends Controller
 
     public function destroy(Comment $comment): JsonResponse
     {
+        Gate::authorize('delete', $comment);
+
         $comment->delete();
 
         return response()->json(null, 204);
@@ -53,7 +53,7 @@ class CommentController extends Controller
 
     protected function commentableExists(string $type, int $id): bool
     {
-        $model = $type === 'App\Models\Project' ? Project::class : Task::class;
+        $model = $type === Project::class ? Project::class : Task::class;
 
         return $model::whereKey($id)->exists();
     }

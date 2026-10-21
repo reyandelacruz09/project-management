@@ -2,7 +2,9 @@
 
 @php
     $isEditing = $project !== null;
-    $oldMembers = collect(old('members', []))->keyBy('id');
+    $oldMembers = collect(old('members', []))
+        ->filter(fn ($member) => is_array($member) && ! empty($member['id']))
+        ->keyBy('id');
     $selectedMembers = $isEditing
         ? $project->members->mapWithKeys(fn ($member) => [$member->id => $member->pivot?->role ?? 'member'])
         : collect();

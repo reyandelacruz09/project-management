@@ -10,8 +10,18 @@
     <div class="py-12">
         <div class="mx-auto max-w-7xl space-y-6 px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-                <form method="GET" action="{{ route('projects.index') }}" class="w-full sm:w-64">
-                    <x-text-input type="text" name="search" :value="$filters['search'] ?? null" placeholder="Search projects..." />
+                <form method="GET" action="{{ route('projects.index') }}" class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+                    <x-text-input type="text" name="search" :value="$filters['search'] ?? null" placeholder="Search projects..." class="w-full sm:w-64" />
+
+                    <select name="status" onchange="this.form.submit()"
+                        class="rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        <option value="">All statuses</option>
+                        @foreach ($statuses as $status)
+                            <option value="{{ $status->value }}" @selected(($filters['status'] ?? null) === $status->value)>
+                                {{ $status->label() }}
+                            </option>
+                        @endforeach
+                    </select>
                 </form>
 
                 <a href="{{ route('projects.create') }}"

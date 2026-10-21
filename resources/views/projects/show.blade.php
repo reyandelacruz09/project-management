@@ -62,7 +62,46 @@
                     </div>
 
                     <div class="rounded-lg bg-white p-6 shadow-sm">
-                        <h3 class="mb-4 text-lg font-semibold text-gray-900">Tasks ({{ $tasks->count() }})</h3>
+                        <div class="mb-4 flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+                            <h3 class="text-lg font-semibold text-gray-900">Tasks ({{ $tasks->count() }})</h3>
+
+                            <form method="GET" action="{{ route('projects.show', $project) }}" class="flex flex-wrap items-center gap-2">
+                                <select name="task_status" onchange="this.form.submit()"
+                                    class="rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">All statuses</option>
+                                    @foreach ($statuses as $status)
+                                        <option value="{{ $status->value }}" @selected(($taskFilters['task_status'] ?? null) === $status->value)>
+                                            {{ $status->label() }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                <select name="task_priority" onchange="this.form.submit()"
+                                    class="rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">All priorities</option>
+                                    @foreach ($priorities as $priority)
+                                        <option value="{{ $priority->value }}" @selected(($taskFilters['task_priority'] ?? null) === $priority->value)>
+                                            {{ $priority->label() }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                <select name="assignee" onchange="this.form.submit()"
+                                    class="rounded-md border-gray-300 text-xs shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                    <option value="">All assignees</option>
+                                    <option value="unassigned" @selected(($taskFilters['assignee'] ?? null) === 'unassigned')>Unassigned</option>
+                                    @foreach ($allUsers as $user)
+                                        <option value="{{ $user->id }}" @selected((string) ($taskFilters['assignee'] ?? '') === (string) $user->id)>
+                                            {{ $user->name }}
+                                        </option>
+                                    @endforeach
+                                </select>
+
+                                @if (! empty(array_filter($taskFilters ?? [])))
+                                    <a href="{{ route('projects.show', $project) }}" class="text-xs text-gray-500 hover:text-gray-700">Reset</a>
+                                @endif
+                            </form>
+                        </div>
 
                         <div class="space-y-4">
                             <form method="POST" action="{{ route('tasks.store', $project) }}"
@@ -75,7 +114,8 @@
                                     <x-input-error :messages="$errors->get('title')" />
 
                                     <textarea name="description" rows="2" placeholder="Description (optional)"
-                                        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('task_description') }}</textarea>
+                                        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">{{ old('description') }}</textarea>
+                                    <x-input-error :messages="$errors->get('description')" />
                                 </div>
 
                                 <div class="grid gap-3 sm:grid-cols-4">
@@ -177,7 +217,7 @@
                                                         </select>
                                                     </form>
 
-                                                    @if ($canManage)
+                                                    @if ($canManage || $task->created_by === auth()->id())
                                                         <form method="POST" action="{{ route('tasks.destroy', [$project, $task]) }}"
                                                             onsubmit="return confirm('Delete this task? Its comments will also be removed.')">
                                                             @csrf
